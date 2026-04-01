@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>卡波(Cabo)计分器</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #1a1a2e; color: #fff; min-height: 100vh; padding: 20px; }
+        .container { max-width: 500px; margin: 0 auto; }
+        h1 { text-align: center; color: #ffd700; margin-bottom: 20px; font-size: 24px; }
+        .card { background: #16213e; border-radius: 12px; padding: 20px; margin-bottom: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.3); }
+        .btn { width: 100%; padding: 14px; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; margin: 5px 0; transition: transform 0.1s; }
+        .btn:active { transform: scale(0.98); }
+        .btn-primary { background: #4CAF50; color: white; }
+        .btn-secondary { background: #2196F3; color: white; }
+        .btn-warning { background: #FF9800; color: white; }
+        .btn-outline { background: transparent; border: 2px solid #666; color: #aaa; }
+        .btn-danger { background: #f44336; color: white; }
+        .row { display: flex; gap: 10px; margin: 10px 0; }
+        .col { flex: 1; }
+        label { display: block; margin-bottom: 5px; font-size: 14px; color: #aaa; }
+        input[type="text"], input[type="number"] { width: 100%; padding: 12px; border: 1px solid #333; border-radius: 8px; background: #0f3460; color: #fff; font-size: 16px; }
+        input[type="number"] { text-align: center; }
+        .checkbox { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+        .checkbox input { width: 20px; height: 20px; }
+        .player-card { background: #0f3460; border-radius: 10px; padding: 15px; margin-bottom: 10px; }
+        .player-name { font-size: 18px; font-weight: bold; color: #4fc3f7; margin-bottom: 10px; }
+        .score-display { font-size: 28px; text-align: center; color: #ffd700; margin: 10px 0; }
+        .round-title { text-align: center; font-size: 20px; margin-bottom: 15px; color: #4fc3f7; }
+        .leader { color: #4CAF50; }
+        .eliminated { color: #f44336; text-decoration: line-through; }
+        .popup { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.9); z-index: 100; align-items: center; justify-content: center; padding: 20px; }
+        .popup.active { display: flex; }
+        .popup-content { background: #16213e; border-radius: 16px; padding: 25px; max-width: 400px; width: 100%; text-align: center; }
+        .popup h2 { color: #ffd700; margin-bottom: 15px; }
+        .result-list { text-align: left; margin: 15px 0; }
+        .result-item { padding: 10px; border-bottom: 1px solid #333; }
+        .winner { color: #4CAF50; font-weight: bold; }
+        .hidden { display: none; }
+        .radio-group { display: flex; justify-content: center; gap: 20px; margin: 10px 0; }
+        .radio-group label { display: flex; align-items: center; gap: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎴 卡波(Cabo)计分器</h1>
+        
+        <!-- 设置界面 -->
+        <div id="setup" class="card">
+            <div class="row">
+                <div class="col">
+                    <label>玩家数量</label>
+                    <div class="radio-group">
+                        <label><input type="radio" name="playerCount" value="2" checked> 2人</label>
+                        <label><input type="radio" name="playerCount" value="3"> 3人</label>
+                        <label><input type="radio" name="playerCount" value="4"> 4人</label>
+                    </div>
+                </div>
+            </div>
+            <div id="playerNames"></div>
+            <button class="btn btn-primary" onclick="startGame()">开始游戏</button>
+        </div>
+        
+        <!-- 游戏界面 -->
+        <div id="game" class="hidden">
+            <div class="round-title">第 <span id="roundNum">1</span> 轮</div>
+            <div id="playersContainer"></div>
+            <button class="btn btn-secondary" onclick="submitRound()">确定</button>
+            <button class="btn btn-warning" onclick="showScores()">显示总分</button>
+            <button class="btn btn-outline" onclick="newGame()">新游戏</button>
+        </div>
+    </div>
+    
+    <!-- 结果弹窗 -->
+    <div id="resultPopup" class="popup">
+        <div class="popup-content">
+            <h2>游戏结束!</h2>
+            <div id="resultList" class="result-list"></div>
+            <p id="winnerText" style="font-size: 18px; color: #4CAF50;"></p>
+            <button class="btn btn-primary" onclick="closePopup()">再来一局</button>
+        </div>
+    </div>
+
+    <script>
+        let players = [];
+        let scores = [];
+        let currentRound = 1;
+        let resetUsed = [];
+
+        function initPlayerNames() {
+            const count = document.querySelector('input[name="playerCount"]:checked').value;
+            const container = document.getElementById('playerNames');
+            container.innerHTML = '';
+            for (let i = 0; i < count; i++) {
+                container.innerHTML += `
+                    <label>玩家${i+1}名称</label>
+                    <input type="text" id="playerName${i}" value="玩家${i+1}" style="margin-bottom: 10px;">
+                `;
+            }
+        }
+
+        document.querySelectorAll('input[name="playerCount"]').forEach(r => r.addEventListener('change', initPlayerNames));
+        initPlayerNames();
+
+        function startGame() {
+            const count = document.querySelector('input[name="playerCount"]:checked').value;
+            players = [];
+            scores = [];
+            resetUsed = [];
+            for (let i = 0; i < count; i++) {
+                const name = document.getElementById(`playerName${i}`).value || `玩家${i+1}`;
+                players.push(name);
+                scores.push(0);
+                resetUsed.push(false);
+            }
+            currentRound = 1;
+            document.getElementById('setup').classList.add('hidden');
+            document.getElementById('game').classList.remove('hidden');
+            renderGame();
+        }
+
+        function renderGame() {
+            document.getElementById('roundNum').textContent = currentRound;
+            const container = document.getElementById('playersContainer');
+            container.innerHTML = '';
+            
+            players.forEach((player, i) => {
+                const status = scores[i] > 100 ? 'eliminated' : (Math.min(...scores.filter((s, j) => s <= 100 || j === i)) === scores[i] ? 'leader' : '');
+                container.innerHTML += `
+                    <div class="player-card">
+                        <div class="player-name">${player} <span class="${status}">(当前: ${scores[i]}分)</span></div>
+                        <label>卡牌总和</label>
+                        <input type="number" id="total${i}" min="0" placeholder="输入数字">
+                        <div class="checkbox">
+                            <input type="checkbox" id="cabo${i}">
+                            <label for="cabo${i}">呼唤CABO</label>
+                        </div>
+                        <div class="checkbox">
+                            <input type="checkbox" id="shenfeng${i}">
+                            <label for="shenfeng${i}">神锋特工队 (12,12,13,13)</label>
+                        </div>
+                    </div>
+                `;
+            });
+        }
+
+        function submitRound() {
+            let hasCabo = false;
+            let roundScores = [];
+            let totals = [];
+            
+            for (let i = 0; i < players.length; i++) {
+                const total = parseInt(document.getElementById(`total${i}`).value);
+                const isCabo = document.getElementById(`cabo${i}`).checked;
+                const isShenfeng = document.getElementById(`shenfeng${i}`).checked;
+                
+                if (isNaN(total)) {
+                    alert(`请输入${players[i]}的卡牌总和`);
+                    return;
+                }
+                
+                totals.push(total);
+                if (isCabo) hasCabo = true;
+                
+                if (isShenfeng) {
+                    roundScores.push({score: 0, isShenfeng: true});
+                } else if (isCabo) {
+                    roundScores.push({score: total * 2, isCabo: true});
+                } else {
+                    roundScores.push({score: total, isCabo: false});
+                }
+            }
+            
+            if (hasCabo) {
+                let minTotal = Math.min(...totals);
+                
+                for (let i = 0; i < players.length; i++) {
+                    if (document.getElementById(`shenfeng${i}`).checked) {
+                        scores[i] += 0;
+                        for (let j = 0; j < players.length; j++) {
+                            if (j !== i) scores[j] += 50;
+                        }
+                    } else if (document.getElementById(`cabo${i}`).checked) {
+                        if (totals[i] === minTotal) {
+                            scores[i] += 0;
+                        } else {
+                            scores[i] += totals[i] + 10;
+                        }
+                    } else {
+                        scores[i] += totals[i];
+                    }
+                }
+            } else {
+                for (let i = 0; i < players.length; i++) {
+                    if (document.getElementById(`shenfeng${i}`).checked) {
+                        scores[i] += 0;
+                        for (let j = 0; j < players.length; j++) {
+                            if (j !== i) scores[j] += 50;
+                        }
+                    } else {
+                        scores[i] += roundScores[i].score;
+                    }
+                }
+            }
+            
+            for (let i = 0; i < players.length; i++) {
+                if (scores[i] === 100 && !resetUsed[i]) {
+                    scores[i] = 50;
+                    resetUsed[i] = true;
+                }
+            }
+            
+            currentRound++;
+            
+            let gameOver = false;
+            for (let i = 0; i < players.length; i++) {
+                if (scores[i] > 100) {
+                    gameOver = true;
+                    break;
+                }
+            }
+            
+            if (gameOver) {
+                showGameOver();
+            } else {
+                renderGame();
+            }
+        }
+
+        function showScores() {
+            let msg = "当前总分:\n\n";
+            const validScores = scores.map((s, i) => ({score: s, index: i})).filter(s => s.score <= 100);
+            const minScore = validScores.length > 0 ? Math.min(...validScores.map(s => s.score)) : 0;
+            
+            players.forEach((p, i) => {
+                let status = "";
+                if (scores[i] === 50 && resetUsed[i]) status = " (已触发凑满分)";
+                else if (scores[i] > 100) status = " (已淘汰)";
+                else if (scores[i] === minScore && scores[i] <= 100) status = " 🥇领先";
+                msg += `${p}: ${scores[i]}分${status}\n`;
+            });
+            alert(msg);
+        }
+
+        function showGameOver() {
+            const validScores = scores.map((s, i) => ({score: s, index: i})).filter(s => s.score <= 100);
+            const minScore = validScores.length > 0 ? Math.min(...validScores.map(s => s.score)) : 0;
+            const winners = players.filter((_, i) => scores[i] === minScore);
+            
+            let html = "";
+            players.forEach((p, i) => {
+                html += `<div class="result-item">${p}: ${scores[i]}分</div>`;
+            });
+            
+            document.getElementById('resultList').innerHTML = html;
+            document.getElementById('winnerText').textContent = `🏆 获胜者: ${winners.join('、')}`;
+            document.getElementById('resultPopup').classList.add('active');
+        }
+
+        function closePopup() {
+            document.getElementById('resultPopup').classList.remove('active');
+            document.getElementById('game').classList.add('hidden');
+            document.getElementById('setup').classList.remove('hidden');
+        }
+
+        function newGame() {
+            if (confirm("确定要开始新游戏吗？")) {
+                document.getElementById('game').classList.add('hidden');
+                document.getElementById('setup').classList.remove('hidden');
+            }
+        }
+    </script>
+</body>
+</html>
